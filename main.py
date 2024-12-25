@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QFileDialog, 
-                             QSlider, QHBoxLayout, QLineEdit, QMessageBox, QSpinBox)
+                             QSlider, QHBoxLayout, QLineEdit, QMessageBox)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QImage
 
@@ -17,11 +17,37 @@ def cv_to_qt_image(cv_img):
 def extract_objects_preview(image_path, threshold_value):
     """Extract objects and provide a preview of the rectangles and the number of objects detected."""
     image = cv2.imread(image_path)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, threshold_value, 255, cv2.THRESH_BINARY_INV)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Define color range for filtering colored objects
+    lower_bound = np.array([0, 100, 100])  # Lower bound of color range (HSV)
+    upper_bound = np.array([180, 255, 255])  # Upper bound of color range (HSV)
+    
+    # Include medium gray color detection (adjusting hue to account for grayish colors)
+    lower_gray = np.array([0, 0, 50])  # Low lightness (gray)
+    upper_gray = np.array([180, 50, 150])  # High lightness (gray)
+
+    mask = cv2.inRange(hsv, lower_bound, upper_bound)
+    mask_gray = cv2.inRange(hsv, lower_gray, upper_gray)
+
+    # Combine the masks for color objects and gray lines
+    combined_mask = cv2.bitwise_or(mask, mask_gray)
+
+    # Apply Gaussian blur to smooth out noise
+    blurred = cv2.GaussianBlur(combined_mask, (5, 5), 0)
+
+    # Apply binary thresholding (you can adjust this threshold as necessary)
+    _, thresh = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY)
+
+    # Morphological operation to remove small noise (small dots)
+    kernel = np.ones((5, 5), np.uint8)
+    morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
     # Find contours
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Filter out small contours (dots)
+    contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 1000]  # Keep only large contours
 
     # Draw rectangles around contours
     preview_image = image.copy()
@@ -52,7 +78,7 @@ class ObjectExtractorApp(QWidget):
 
         # Preview label
         self.preview_label = QLabel("Image Preview")
-        self.preview_label.setFixedSize(400, 300)  # Adjust size as needed
+        self.preview_label.setFixedSize(800, 600)  # Larger preview size
         layout.addWidget(self.preview_label)
 
         # Threshold slider and entry
@@ -98,7 +124,7 @@ class ObjectExtractorApp(QWidget):
 
         # Convert to QPixmap and display
         pixmap = cv_to_qt_image(preview_image)
-        self.preview_label.setPixmap(pixmap.scaled(self.preview_label.size(), Qt.KeepAspectRatio))
+        self.preview_label.setPixmap(pixmap.scaled(self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         
         # Update object count
         self.count_label.setText(f"Object Count: {object_count}")
@@ -120,11 +146,37 @@ class ObjectExtractorApp(QWidget):
 
     def extract_objects(self, image_path, threshold_value, output_folder):
         image = cv2.imread(image_path)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, threshold_value, 255, cv2.THRESH_BINARY_INV)
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        # Define color range for filtering colored objects
+        lower_bound = np.array([0, 100, 100])
+        upper_bound = np.array([180, 255, 255])
+        
+        # Include medium gray color detection
+        lower_gray = np.array([0, 0, 50])
+        upper_gray = np.array([180, 50, 150])
+
+        mask = cv2.inRange(hsv, lower_bound, upper_bound)
+        mask_gray = cv2.inRange(hsv, lower_gray, upper_gray)
+
+        # Combine the masks for color objects and gray lines
+        combined_mask = cv2.bitwise_or(mask, mask_gray)
+
+        # Apply Gaussian blur to smooth out noise
+        blurred = cv2.GaussianBlur(combined_mask, (5, 5), 0)
+
+        # Apply binary thresholding
+        _, thresh = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY)
+
+        # Morphological operation to remove small noise
+        kernel = np.ones((5, 5), np.uint8)
+        morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
         # Find contours
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Filter out small contours (dots)
+        contours = [cnt for cnt in contours if cv2.contourArea(cnt) > 1000]  # Keep only large contours
 
         # Extract and save each object
         for i, contour in enumerate(contours):
