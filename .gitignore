@@ -1,0 +1,9 @@
+output/
+.venv/
+venv/
+
+# Byte-compiled files
+__pycache__/
+*.pyc
+
+.vscode/
